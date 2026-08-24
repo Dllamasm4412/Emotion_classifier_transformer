@@ -1,0 +1,115 @@
+\documentclass[11pt]{article}
+
+\usepackage[margin=1in]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{lmodern}
+\usepackage{setspace}
+\usepackage{amsmath}
+\usepackage{hyperref}
+\usepackage{enumitem}
+
+\title{Multimodal Transformer-Based Arousal Estimation from Physiological Signals}
+\author{}
+\date{}
+
+\begin{document}
+\maketitle
+\onehalfspacing
+
+\section{Introduction}
+Physiological-signal-based emotion recognition aims to estimate internal affective states (e.g., arousal) from signals such as heart rate, respiration, and skin conductance, enabling applications in mental health monitoring, adaptive interfaces, and biofeedback systems \cite{kacimi_comprehensive_2025,wu_comprehensive_2025}. Arousal in particular is strongly linked to autonomic activation and is commonly modeled from peripheral signals including PPG, respiration, and GSR in dimensional emotion frameworks \cite{kacimi_comprehensive_2025,sato_physiological_2020}. Many existing approaches rely on hand-crafted features and shallow classifiers, or on unimodal deep models that treat each signal independently \cite{kacimi_comprehensive_2025,siddiqui_respiration_2021}. Simple early or late fusion (e.g., concatenation or score averaging) can miss temporal dependencies and complementary information across modalities \cite{wu_comprehensive_2025,abdurahmon_general_2025}. Recent work in multimodal emotion recognition shows that attention and transformer-based fusion can better model interactions between modalities such as EEG, speech, and audiovisual data \cite{alam_tmnet_2025,huo_cemtnet_2026,ahire_maven_2025}.
+
+We propose a compact architecture that combines modality-specific 1D CNN encoders with a multimodal transformer using cross-attention for fusion. The model learns temporal features for each modality and then uses cross-attention to let one modality query informative patterns from the others, instead of relying only on concatenation. We focus on predicting emotional arousal from PPG, respiration, and GSR, and design the architecture so that an EEG encoder can be added later, following similar transformer-based EEG emotion work \cite{li_spatial_2025,abgeena_unravelling_2025}.
+
+\section{Related Work}
+\subsection{Physiological Emotion Recognition}
+Mobile and wearable systems have used multiple physiological signals (e.g., PPG, EDA) with deep models for emotion recognition, including convolution-augmented transformers on mobile sensors \cite{yang_mobile_2022}. Prior studies also link peripheral physiology to valence and arousal dimensions and review feature- and learning-based approaches \cite{sato_physiological_2020,kacimi_comprehensive_2025}. Our work differs by focusing on a single, unified CNN+transformer architecture with explicit cross-attention fusion over peripheral signals, rather than only feature-level fusion or unimodal models.
+
+\subsection{Transformer-Based Emotion Modeling}
+Transformers have been used for forecasting and classifying emotional states (mostly valence and arousal) from behavioral and digital-trace data, demonstrating strong sequence modeling capabilities \cite{paz-arbaizar_emotion_2025,noauthor_emotion_2025}. Transformer-based architectures have also been applied to multimodal emotion recognition, for example TMNet \cite{alam_tmnet_2025} and other transformer-based fusion networks summarized in recent multimodal surveys \cite{wu_comprehensive_2025,abdurahmon_general_2025}.
+
+Our work differs by adapting these ideas to peripheral physiological signals and emphasizing a small model, comparing cross-attention fusion directly against simpler fusion strategies on the same data.
+
+\subsection{Attention-Based Multimodal Fusion}
+Bi-directional cross-modal attention has been used to fuse visual, audio, and text for valence-arousal prediction in dynamic emotion recognition (e.g., MAVEN) \cite{ahire_maven_2025,ahire_maven_nodate}. Comprehensive multimodal reviews report that attention-based fusion generally outperforms naive early fusion in large-scale benchmarks, particularly when modalities are temporally misaligned or heterogeneous \cite{wu_comprehensive_2025}. Our model uses a similar cross-attention idea but for three synchronized physiological streams, exploring whether these mechanisms also help in the lower-bandwidth, sensor-based setting.
+
+\subsection{EEG Emotion Recognition (Future Extension)}
+Recent EEG emotion models use spatial-temporal transformers, CNNs, or graph networks to capture local channel structure and longer-range temporal patterns for valence and arousal \cite{li_spatial_2025,cheng_eeg-based_2024,chen_eeg-based_2024,cao_emotion_2025}. These architectures typically output a sequence of EEG embeddings that can be fed into attention-based fusion blocks. We plan to treat EEG as an additional modality in future work by adding an EEG encoder that produces time-aligned embeddings, which can be integrated into the same cross-attention fusion layer without changing the core design.
+
+\section{Methods}
+\subsection{Problem and Data}
+We model emotion recognition as predicting arousal from windowed physiological signals. For each modality $m \in \{\mathrm{PPG}, \mathrm{resp}, \mathrm{GSR}\}$, we have a time series $x^{(m)} \in \mathbb{R}^{T \times C_m}$ and a corresponding arousal label (continuous or discretized) per window.
+
+We plan to use a public dataset with synchronized peripheral signals and valence-arousal annotations (e.g., DEAP or a similar dataset with peripheral channels) \cite{noauthor_datasets_nodate}. Preprocessing will include:
+\begin{itemize}[leftmargin=1.4em]
+  \item Resampling to a common sampling rate.
+  \item Band-pass filtering where appropriate.
+  \item Windowing.
+  \item Per-subject normalization to reduce inter-subject differences.
+\end{itemize}
+These steps follow typical pipelines in physiological emotion work \cite{kacimi_comprehensive_2025,siddiqui_respiration_2021}.
+
+\subsection{CNN Encoders}
+Each modality is processed by a small 1D CNN encoder:
+\begin{itemize}[leftmargin=1.4em]
+  \item 2--3 convolutional layers (kernel size 5--9), with ReLU and batch normalization.
+  \item Temporal pooling to reduce sequence length while keeping relevant dynamics.
+\end{itemize}
+This yields a sequence of embeddings $h^{(m)} \in \mathbb{R}^{T_m \times d_{\mathrm{cnn}}}$ per modality. Modality-specific parameters allow the CNN to adapt to different signal statistics (e.g., slow GSR vs faster PPG) \cite{kacimi_comprehensive_2025}.
+
+\subsection{Multimodal Transformer with Cross-Attention}
+We project each $h^{(m)}$ to a shared dimension $d$ and add positional encodings. The fusion module stacks a small number of attention blocks (e.g., 2--4 layers), each combining:
+\begin{itemize}[leftmargin=1.4em]
+  \item Self-attention within each modality to capture temporal dependencies.
+  \item Cross-attention where one modality's tokens attend to keys and values from the others, allowing information exchange across signals \cite{ahire_maven_2025,ahire_maven_nodate}.
+\end{itemize}
+
+We then pool the fused sequence (e.g., global average pooling) to obtain a fixed-size representation $z$. A small MLP head maps $z$ to:
+\begin{itemize}[leftmargin=1.4em]
+  \item A scalar (regression with MSE) for continuous arousal, or
+  \item A softmax over discrete arousal levels (classification with cross-entropy).
+\end{itemize}
+
+We will train with Adam or AdamW, early stopping on validation loss, and moderate regularization (dropout, weight decay), keeping the model size reasonable for a semester project.
+
+\subsection{Future EEG Extension}
+An EEG encoder (e.g., a CNN or transformer over channels and time) can produce a sequence aligned in time with the other modalities, which can be added as another modality input to the same fusion block, following established EEG-transformer practices \cite{li_spatial_2025,cheng_eeg-based_2024,chen_eeg-based_2024}. This extension is out of scope for the initial project but informs how we design interfaces between encoders and the fusion module.
+
+\section{Experiments}
+\subsection{Experiment 1: Fusion Strategy Comparison}
+\textbf{Purpose:} Test whether cross-attention fusion improves arousal prediction compared to simpler baselines.
+
+\textbf{Models:}
+\begin{itemize}[leftmargin=1.4em]
+  \item Unimodal baselines: CNN (and, if feasible, CNN+transformer) using only PPG, only respiration, or only GSR.
+  \item Early fusion: concatenate modality features after CNN encoders, then apply a transformer or MLP.
+  \item Late fusion: train unimodal models and average or weight their prediction scores.
+  \item Proposed: CNN encoders + multimodal transformer with cross-attention.
+\end{itemize}
+
+\textbf{Metrics:}
+\begin{itemize}[leftmargin=1.4em]
+  \item Regression: MSE and Pearson correlation between predicted and true arousal \cite{galvao_predicting_2021,choi_arousal_2018}.
+  \item Classification (if discretized): accuracy and macro F1 to account for class imbalance.
+\end{itemize}
+
+We will use the same train/validation/test splits across models and report mean and standard deviation over multiple runs where computation allows.
+
+\subsection{Experiment 2: Modality and Architecture Ablation}
+\textbf{Purpose:} Understand which modalities and components contribute most to performance.
+
+\textbf{Ablations:}
+\begin{itemize}[leftmargin=1.4em]
+  \item Modality ablation: train the proposed model with all three modalities and with each modality removed in turn (no PPG, no respiration, no GSR).
+  \item Architecture ablation: compare the full cross-attention model with a variant that uses only self-attention on concatenated features (no explicit cross-attention).
+\end{itemize}
+
+\textbf{Metrics:} Same as Experiment 1.
+
+We will summarize changes in performance across ablations in tables and simple plots to keep the analysis focused and interpretable.
+
+\bibliographystyle{plain}
+\bibliography{library}
+
+\end{document}
